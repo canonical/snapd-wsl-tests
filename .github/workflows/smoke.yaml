@@ -39,6 +39,8 @@ jobs:
             wsl-enable-systemd: true
           - codename: noble
             version-id: "24.04"
+          - codename: oracular
+            version-id: "24.10"
     uses: ./.github/workflows/generic.yaml
     with:
       distro-name: Ubuntu ${{ matrix.version-id }}
