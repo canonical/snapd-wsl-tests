@@ -34,6 +34,9 @@ jobs:
         lts: [false]
         wsl-enable-systemd: [false]
         include:
+          - codename: focal
+            version-id: "20.04"
+            wsl-enable-systemd: true
           - codename: jammy
             version-id: "22.04"
             wsl-enable-systemd: true
