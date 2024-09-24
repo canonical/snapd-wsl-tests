@@ -57,24 +57,15 @@ runs:
       run: |
         Set-StrictMode -version latest
         Write-Output "Running WSL installer..."
-        Start-Process -Wait -NoNewWindow msiexec.exe -ArgumentList "/quiet /passive /package ${{ inputs.wsl-msi-file }}"
+        msiexec.exe /quiet /passive /n /package "${{ inputs.wsl-msi-file }}"
         if ( ! $? ) {
           exit 1
         }
         Write-Output "Switching to WSL 2."
-        Start-Process -NoNewWindow -Wait -FilePath "wsl.exe" -ArgumentList "--set-default-version 2"
-        if ( ! $? ) {
-          exit 1
-        }
+        wsl --set-default-version 2
         Write-Output "Querying WSL version and status."
-        Start-Process -NoNewWindow -Wait -FilePath "wsl.exe" -ArgumentList "--version"
-        if ( ! $? ) {
-          exit 1
-        }
-        Start-Process -NoNewWindow -Wait -FilePath "wsl.exe" -ArgumentList "--status"
-        if ( ! $? ) {
-          exit 1
-        }
+        wsl --version
+        wsl --status
 
     - name: Create a .wslconfig file
       shell: pwsh
