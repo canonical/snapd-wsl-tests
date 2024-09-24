@@ -120,13 +120,13 @@ jobs:
 
       - name: Terminate ${{ inputs.distro-name }} WSL instance
         if: always()
+        env:
+          WSL_DISTRO_NAME: ${{ inputs.wsl-distro-name }}
         run: |
           Set-StrictMode -version latest
-          Write-Output "Terminating ${{ inputs.distro-name }} WSL instance..."
-          $DistroName = '${{ inputs.wsl-distro-name }}'
-
-          Start-Process -NoNewWindow -Wait -FilePath "wsl.exe" -ArgumentList "--terminate $DistroName"
-          Start-Process -NoNewWindow -Wait -FilePath "wsl.exe" -ArgumentList "--unregister $DistroName"
+          Write-Output "Terminating ${Env:WSL_DISTRO_NAME} WSL instance..."
+          wsl --terminate ${Env:WSL_DISTRO_NAME}
+          wsl --unregister ${Env:WSL_DISTRO_NAME}
 
   docker:
     name: "Smoke test with \"docker\" snap"
@@ -247,13 +247,13 @@ jobs:
 
       - name: Terminate ${{ inputs.distro-name }} WSL instance
         if: always()
+        env:
+          WSL_DISTRO_NAME: ${{ inputs.wsl-distro-name }}
         run: |
           Set-StrictMode -version latest
-          Write-Output "Terminating ${{ inputs.distro-name }} WSL instance..."
-          $DistroName = '${{ inputs.wsl-distro-name }}'
-
-          Start-Process -NoNewWindow -Wait -FilePath "wsl.exe" -ArgumentList "--terminate $DistroName"
-          Start-Process -NoNewWindow -Wait -FilePath "wsl.exe" -ArgumentList "--unregister $DistroName"
+          Write-Output "Terminating ${Env:WSL_DISTRO_NAME} WSL instance..."
+          wsl --terminate ${Env:WSL_DISTRO_NAME}
+          wsl --unregister ${Env:WSL_DISTRO_NAME}
 
   snapcraft-lxd:
     name: "Smoke test with \"snapcraft\" and \"lxd\" snaps"
@@ -369,10 +369,10 @@ jobs:
 
       - name: Terminate ${{ inputs.distro-name }} WSL instance
         if: always()
+        env:
+          WSL_DISTRO_NAME: ${{ inputs.wsl-distro-name }}
         run: |
           Set-StrictMode -version latest
-          Write-Output "Terminating ${{ inputs.distro-name }} WSL instance..."
-          $DistroName = '${{ inputs.wsl-distro-name }}'
-
-          Start-Process -NoNewWindow -Wait -FilePath "wsl.exe" -ArgumentList "--terminate $DistroName"
-          Start-Process -NoNewWindow -Wait -FilePath "wsl.exe" -ArgumentList "--unregister $DistroName"
+          Write-Output "Terminating ${Env:WSL_DISTRO_NAME} WSL instance..."
+          wsl --terminate ${Env:WSL_DISTRO_NAME}
+          wsl --unregister ${Env:WSL_DISTRO_NAME}
