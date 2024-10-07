@@ -88,4 +88,7 @@ runs:
           }
         }
         $wslSnapsDir = $(wsl --distribution ${Env:WSL_DISTRO_NAME} wslpath -u `'${Env:GITHUB_WORKSPACE}\${Env:SNAPS_DIR}`')
+        Write-Output "Snaps will be saved to ${wslSnapsDir}"
         wsl --distribution ${Env:WSL_DISTRO_NAME} --cd ${wslSnapsDir} snap download --revision=${Env:SNAP_REVISION} ${Env:SNAP_NAME} || (Write-Error "Cannot download snap ${Env:SNAP_NAME} revision ${Env:SNAP_REVISION}." && Exit 1)
+        ls ${Env:GITHUB_WORKSPACE}
+        ls ${Env:SNAPS_DIR}
