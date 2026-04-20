@@ -9,11 +9,11 @@ inputs:
   wsl-msi-url:
     description: URL of the MSI installer
     required: false
-    default: https://github.com/microsoft/WSL/releases/download/2.2.4/wsl.2.2.4.0.x64.msi
+    default: https://github.com/microsoft/WSL/releases/download/2.6.3/wsl.2.6.3.0.x64.msi
   wsl-msi-file:
     description: Name of the WSL installer
     required: false
-    default: wsl.2.2.4.0.x64.msi
+    default: wsl.2.6.3.0.x64.msi
   # Remaining inputs describe wslconfig file:
   # https://learn.microsoft.com/en-us/windows/wsl/wsl-config
   # Only a small subset is implemented, as needed.
