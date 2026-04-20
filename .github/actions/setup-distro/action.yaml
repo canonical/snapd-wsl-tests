@@ -166,45 +166,62 @@ runs:
       run: |
         Set-StrictMode -version latest
 
-        Write-Output "Adding system group for docker."
-        wsl `
-          --distribution "${Env:WSL_DISTRO_NAME}" `
-          --user root `
-          --cd / `
-          groupadd --system docker
-        if ( ! $? ) {
-          Write-Error "Cannot add docker system group."
-          exit 1
-        }
+        $maxAttempts = 3
+        $setupDone = $false
+        for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+          if ($attempt -gt 1) {
+            Write-Output "Retrying WSL instance setup (attempt $attempt of $maxAttempts)..."
+            wsl --terminate "${Env:WSL_DISTRO_NAME}"
+            Start-Sleep -Seconds 10
+          }
 
-        Write-Output "Adding system group for LXD."
-        wsl `
-          --distribution "${Env:WSL_DISTRO_NAME}" `
-          --user root `
-          --cd / `
-          groupadd --system lxd
-        if ( ! $? ) {
-          Write-Error "Cannot add lxd system group."
-          exit 1
-        }
+          Write-Output "Adding system group for docker."
+          wsl `
+            --distribution "${Env:WSL_DISTRO_NAME}" `
+            --user root `
+            --cd / `
+            groupadd --force --system docker
+          if ( ! $? ) {
+            Write-Warning "Failed to add docker system group."
+            continue
+          }
 
-        Write-Output "Adding test user 'user'."
-        wsl `
-          --distribution "${Env:WSL_DISTRO_NAME}" `
-          --user root `
-          --cd / `
-          useradd --create-home --skel /etc/skel --groups users,admin,lxd,docker --shell=/bin/bash user
-        if ( ! $? ) {
-          Write-Error "Cannot add test user 'user'."
-          exit 1
-        }
+          Write-Output "Adding system group for LXD."
+          wsl `
+            --distribution "${Env:WSL_DISTRO_NAME}" `
+            --user root `
+            --cd / `
+            groupadd --force --system lxd
+          if ( ! $? ) {
+            Write-Warning "Failed to add lxd system group."
+            continue
+          }
 
-        Write-Output "Allow test user 'user' to use sudo."
-        Add-Content `
-          -LiteralPath \\wsl.localhost\${Env:WSL_DISTRO_NAME}\etc\sudoers.d\user.conf `
-          -Value "user ALL= NOPASSWD: ALL"
-        if ( ! $? ) {
-          Write-Error "Cannot allow test user 'user' to use sudo."
+          Write-Output "Adding test user 'user'."
+          wsl `
+            --distribution "${Env:WSL_DISTRO_NAME}" `
+            --user root `
+            --cd / `
+            bash -c "id user > /dev/null 2>&1 || useradd --create-home --skel /etc/skel --groups users,admin,lxd,docker --shell=/bin/bash user"
+          if ( ! $? ) {
+            Write-Warning "Failed to add test user 'user'."
+            continue
+          }
+
+          Write-Output "Allow test user 'user' to use sudo."
+          Set-Content `
+            -LiteralPath \\wsl.localhost\${Env:WSL_DISTRO_NAME}\etc\sudoers.d\user.conf `
+            -Value "user ALL= NOPASSWD: ALL"
+          if ( ! $? ) {
+            Write-Warning "Failed to allow test user 'user' to use sudo."
+            continue
+          }
+
+          $setupDone = $true
+          break
+        }
+        if ( -not $setupDone ) {
+          Write-Error "Cannot set up WSL instance."
           exit 1
         }
 
