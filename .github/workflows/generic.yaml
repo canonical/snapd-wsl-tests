@@ -54,6 +54,8 @@ jobs:
         uses: ./.github/actions/install-wsl
         with:
           wslconfig-vm-idle-timeout: -1
+          wsl-msi-url: ${{ inputs.wsl-msi-url }}
+          wsl-msi-file: ${{ inputs.wsl-msi-file }}
 
       - name: Import ${{ inputs.wsl-distro-name }} into WSL and initialize it
         id: setup-distro
@@ -136,6 +138,9 @@ jobs:
 
       - name: Install WSL
         uses: ./.github/actions/install-wsl
+        with:
+          wsl-msi-url: ${{ inputs.wsl-msi-url }}
+          wsl-msi-file: ${{ inputs.wsl-msi-file }}
 
       - name: Import ${{ inputs.wsl-distro-name }} into WSL and initialize it
         id: setup-distro
@@ -263,6 +268,9 @@ jobs:
 
       - name: Install WSL
         uses: ./.github/actions/install-wsl
+        with:
+          wsl-msi-url: ${{ inputs.wsl-msi-url }}
+          wsl-msi-file: ${{ inputs.wsl-msi-file }}
 
       - name: Import ${{ inputs.wsl-distro-name }} into WSL and initialize it
         id: setup-distro
@@ -405,6 +413,8 @@ jobs:
         uses: ./.github/actions/install-wsl
         with:
           wslconfig-vm-idle-timeout: -1
+          wsl-msi-url: ${{ inputs.wsl-msi-url }}
+          wsl-msi-file: ${{ inputs.wsl-msi-file }}
           wslconfig-kernel: ${{ github.workspace }}\vmlinux-wsl2-snapd-x86_64
           wslconfig-kernel-command-line: security=apparmor
 
