@@ -82,12 +82,33 @@ runs:
         }
 
         Write-Output "Importing ${Env:WSL_ROOTFSES_DIR}\${Env:WSL_ROOTFS_FILE} RootFS into WSL..."
-        wsl `
-          --import "${Env:WSL_DISTRO_NAME}" `
-          ".\${Env:WSL_VMS_DIR}\${Env:WSL_DISTRO_NAME}" `
-          ".\${Env:WSL_ROOTFSES_DIR}\${Env:WSL_ROOTFS_FILE}" `
-          --version 2
-        if ( ! $? ) {
+        $maxAttempts = 3
+        $imported = $false
+        for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+          if ($attempt -gt 1) {
+            Write-Output "Retrying WSL import (attempt $attempt of $maxAttempts)..."
+            Write-Output "Cleaning up partial import state..."
+            wsl --unregister "${Env:WSL_DISTRO_NAME}"
+            $vmPath = ".\${Env:WSL_VMS_DIR}\${Env:WSL_DISTRO_NAME}"
+            if (Test-Path -PathType Container -LiteralPath $vmPath) {
+              Remove-Item -Recurse -Force -LiteralPath $vmPath
+            }
+            Write-Output "Restarting WSL service to recover from connection error..."
+            Restart-Service LxssManager -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 10
+          }
+          wsl `
+            --import "${Env:WSL_DISTRO_NAME}" `
+            ".\${Env:WSL_VMS_DIR}\${Env:WSL_DISTRO_NAME}" `
+            ".\${Env:WSL_ROOTFSES_DIR}\${Env:WSL_ROOTFS_FILE}" `
+            --version 2
+          if ($?) {
+            $imported = $true
+            break
+          }
+          Write-Warning "WSL import attempt $attempt of $maxAttempts failed."
+        }
+        if ( -not $imported ) {
           Write-Error "Cannot import ${Env:WSL_DISTRO_NAME} into WSL."
           exit 1
         }
