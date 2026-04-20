@@ -38,13 +38,17 @@ jobs:
           - codename: jammy
             version-id: "22.04"
             wsl-enable-systemd: true
+            wsl-rootfs-url: https://cloud-images.ubuntu.com/wsl/jammy/current/ubuntu-jammy-wsl-amd64-ubuntu22.04lts.rootfs.tar.gz
+            wsl-rootfs-file: ubuntu-jammy-wsl-amd64-ubuntu22.04lts.rootfs.tar.gz
           - codename: noble
             version-id: "24.04"
+            wsl-rootfs-url: https://cdimage.ubuntu.com/ubuntu-wsl/noble/daily-live/current/noble-wsl-amd64.wsl
+            wsl-rootfs-file: noble-wsl-amd64.wsl
     uses: ./.github/workflows/generic.yaml
     with:
       distro-name: Ubuntu ${{ matrix.version-id }}
-      wsl-rootfs-url: https://cloud-images.ubuntu.com/wsl/${{ matrix.codename }}/current/ubuntu-${{ matrix.codename }}-wsl-amd64-wsl.rootfs.tar.gz
-      wsl-rootfs-file: ubuntu-${{ matrix.codename }}-wsl-amd64-wsl.rootfs.tar.gz
+      wsl-rootfs-url: ${{ matrix.wsl-rootfs-url }}
+      wsl-rootfs-file: ${{ matrix.wsl-rootfs-file }}
       wsl-distro-name: Test-Ubuntu-${{ matrix.version-id }}
       wsl-enable-systemd: ${{ matrix.wsl-enable-systemd }}
       snapd-snap-revision: ${{ github.event.inputs.snapd-snap-revision != 0 && fromJSON(github.event.inputs.snapd-snap-revision) || 0 }}
