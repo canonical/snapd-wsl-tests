@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Canonical Ltd.
 
-package main
+package dl
 
 import (
 	"context"
@@ -26,11 +26,11 @@ func TestDownloadFile(t *testing.T) {
 			setupSrv: func(srv *httptest.Server) {
 				srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.WriteHeader(http.StatusOK)
-					fmt.Fprint(w, "test MSI content")
+					fmt.Fprint(w, "test file content")
 				})
 			},
 			wantErr:  false,
-			wantData: "test MSI content",
+			wantData: "test file content",
 		},
 		{
 			name: "http error",
@@ -59,14 +59,14 @@ func TestDownloadFile(t *testing.T) {
 			tt.setupSrv(srv)
 
 			tmpDir := t.TempDir()
-			destPath := filepath.Join(tmpDir, "test.msi")
+			destPath := filepath.Join(tmpDir, "test.bin")
 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
-			err := downloadFile(ctx, srv.URL, destPath)
+			err := DownloadFile(ctx, srv.URL, destPath)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("downloadFile() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("DownloadFile() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 
@@ -76,7 +76,7 @@ func TestDownloadFile(t *testing.T) {
 					t.Fatalf("failed to read downloaded file: %v", err)
 				}
 				if string(content) != tt.wantData {
-					t.Errorf("downloadFile() content = %q, want %q", string(content), tt.wantData)
+					t.Errorf("DownloadFile() content = %q, want %q", string(content), tt.wantData)
 				}
 
 				// Verify no temp file left behind
@@ -101,12 +101,12 @@ func TestDownloadFileAtomicRename(t *testing.T) {
 	defer srv.Close()
 
 	tmpDir := t.TempDir()
-	destPath := filepath.Join(tmpDir, "test.msi")
+	destPath := filepath.Join(tmpDir, "test.bin")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
-	_ = downloadFile(ctx, srv.URL, destPath)
+	_ = DownloadFile(ctx, srv.URL, destPath)
 
 	// Verify destination file does NOT exist (partial write not committed)
 	if _, err := os.Stat(destPath); err == nil {

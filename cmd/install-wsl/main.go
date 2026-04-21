@@ -22,20 +22,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net/http"
 	neturl "net/url"
 	"os"
 	"os/signal"
 	"path"
 	"path/filepath"
-	"time"
-)
 
-// httpClient is an HTTP client with a reasonable timeout to prevent
-// hanging on stalled connections.
-var httpClient = &http.Client{
-	Timeout: 5 * 60 * time.Second, // 5 minutes
-}
+	"github.com/canonical/snapd-wsl-tests/internal/dl"
+)
 
 func run(ctx context.Context) error {
 	// Load all environment variables early
@@ -127,7 +121,7 @@ func run(ctx context.Context) error {
 			if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 				return fmt.Errorf("cannot create MSI cache directory: %w", err)
 			}
-			if err := downloadFile(ctx, msiURL, msiPath); err != nil {
+			if err := dl.DownloadFile(ctx, msiURL, msiPath); err != nil {
 				return fmt.Errorf("cannot download WSL installer: %w", err)
 			}
 		} else {

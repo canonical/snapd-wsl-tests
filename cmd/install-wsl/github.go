@@ -10,6 +10,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/canonical/snapd-wsl-tests/internal/wsl"
 )
 
 // release is the subset of the GitHub releases API response we need.
@@ -36,7 +38,7 @@ func fetchRelease(ctx context.Context, version, token string) (*release, error) 
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	resp, err := httpClient.Do(req)
+	resp, err := wsl.HTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("cannot look up WSL release (fetch): %w", err)
 	}
