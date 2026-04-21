@@ -57,6 +57,23 @@ runs:
       run: |
         Set-StrictMode -version latest
 
+        function Get-WslVersion {
+          try {
+            $output = & wsl.exe --version 2>&1
+            if ($LASTEXITCODE -ne 0) {
+              return $null
+            }
+
+            $versionLine = $output | Select-String -Pattern '^WSL version:\s*([0-9.]+)$'
+            if ($null -eq $versionLine) {
+              return $null
+            }
+            return $versionLine.Matches[0].Groups[1].Value
+          } catch {
+            return $null
+          }
+        }
+
         function Invoke-CheckedProcess {
           param(
             [Parameter(Mandatory = $true)]
@@ -67,13 +84,30 @@ runs:
 
           $process = Start-Process -NoNewWindow -Wait -PassThru -FilePath $FilePath -ArgumentList $ArgumentList
           if ($process.ExitCode -ne 0) {
-            Write-Error "Command failed: $FilePath $($ArgumentList -join ' ')"
+            Write-Error "Command failed with exit code $($process.ExitCode): $FilePath $($ArgumentList -join ' ')"
             exit $process.ExitCode
           }
         }
 
+        $desiredWslVersionMatch = [regex]::Match("${{ inputs.wsl-msi-file }}", '([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)')
+        $desiredWslVersion = $null
+        if ($desiredWslVersionMatch.Success) {
+          $desiredWslVersion = $desiredWslVersionMatch.Groups[1].Value
+        }
+
+        $currentWslVersion = Get-WslVersion
+        if ($null -ne $currentWslVersion) {
+          Write-Output "Detected WSL version before install: $currentWslVersion"
+        } else {
+          Write-Output "Unable to detect a pre-installed WSL version before install."
+        }
+
         Write-Output "Running WSL installer..."
-        Invoke-CheckedProcess -FilePath "msiexec.exe" -ArgumentList @("/quiet", "/passive", "/package", "${{ inputs.wsl-msi-file }}")
+        if ($null -ne $desiredWslVersion -and $currentWslVersion -eq $desiredWslVersion) {
+          Write-Output "WSL $desiredWslVersion is already installed; skipping MSI installation."
+        } else {
+          Invoke-CheckedProcess -FilePath "msiexec.exe" -ArgumentList @("/quiet", "/passive", "/package", "${{ inputs.wsl-msi-file }}")
+        }
         Write-Output "Switching to WSL 2."
         Invoke-CheckedProcess -FilePath "wsl.exe" -ArgumentList @("--set-default-version", "2")
         Write-Output "Querying WSL version and status."
