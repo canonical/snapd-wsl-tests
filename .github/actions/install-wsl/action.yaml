@@ -12,7 +12,7 @@ inputs:
     required: false
     default: "2.6.3"
   wsl-installer-url:
-    description: Override the MSI download URL (optional; disables MSI caching)
+    description: Override the MSI download URL (optional; skips GitHub Actions cache step but downloads are still cached locally)
     required: false
     default: ""
   # Remaining inputs describe the .wslconfig file:
