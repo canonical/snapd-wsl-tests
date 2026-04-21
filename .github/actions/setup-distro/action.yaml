@@ -383,6 +383,36 @@ runs:
             --exec /bin/sh -lc 'state="$(systemctl is-system-running --wait || true)"; printf "%s\n" "$state"; case "$state" in running|degraded) exit 0 ;; *) exit 1 ;; esac'
         )
         $systemdState = ($systemdState | Select-Object -Last 1).Trim()
+        $systemdProbeOk = $?
+
+        function Show-FailedSystemdUnitDiagnostics {
+          $failedUnits = @(
+            wsl `
+              --distribution "${Env:WSL_DISTRO_NAME}" `
+              --user root `
+              --cd / `
+              --exec /bin/sh -lc "systemctl --failed --plain --no-legend --no-pager --full | awk 'NF { print `$1 }'"
+          )
+          $failedUnits = @(
+            $failedUnits |
+              ForEach-Object { $_.Trim() } |
+              Where-Object { $_ -ne "" }
+          )
+
+          if ($failedUnits.Count -eq 0) {
+            Write-Output "No failed systemd units reported."
+            return
+          }
+
+          foreach ($failedUnit in $failedUnits) {
+            Write-Output "Recent journal for failed unit ${failedUnit}:"
+            wsl `
+              --distribution "${Env:WSL_DISTRO_NAME}" `
+              --user root `
+              --cd / `
+              --exec journalctl --no-pager -b -u "${failedUnit}"
+          }
+        }
 
         if ($systemdState -eq "degraded") {
           Write-Warning "systemd reached a degraded state in ${Env:WSL_DISTRO_NAME}; continuing and printing failed units for diagnostics."
@@ -391,13 +421,15 @@ runs:
             --user root `
             --cd / `
             --exec systemctl --failed --no-pager --full
-        } elseif ( ! $? ) {
+          Show-FailedSystemdUnitDiagnostics
+        } elseif ( -not $systemdProbeOk ) {
           Write-Error "systemd did not reach a usable state in ${Env:WSL_DISTRO_NAME} (state: $systemdState)."
           wsl `
             --distribution "${Env:WSL_DISTRO_NAME}" `
             --user root `
             --cd / `
             --exec systemctl --failed --no-pager --full
+          Show-FailedSystemdUnitDiagnostics
           exit 1
         }
 
