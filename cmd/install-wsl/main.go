@@ -17,12 +17,14 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -41,9 +43,9 @@ type asset struct {
 }
 
 // fetchRelease queries the GitHub releases API for the microsoft/WSL repo.
-func fetchRelease(version string) (*release, error) {
+func fetchRelease(ctx context.Context, version string) (*release, error) {
 	url := "https://api.github.com/repos/microsoft/WSL/releases/tags/" + version
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
@@ -91,8 +93,8 @@ func goArchToWSLArch() string {
 
 // getInstalledWSLVersion runs "wsl.exe --version" and parses the version line.
 // Returns an empty string if WSL is not installed or the version cannot be parsed.
-func getInstalledWSLVersion() string {
-	cmd := exec.Command("wsl.exe", "--version")
+func getInstalledWSLVersion(ctx context.Context) string {
+	cmd := exec.CommandContext(ctx, "wsl.exe", "--version")
 	cmd.Env = append(os.Environ(), "WSL_UTF8=1")
 	out, err := cmd.Output()
 	if err != nil {
@@ -143,9 +145,13 @@ func compareVersions(a, b string) int {
 	return 0
 }
 
-func downloadFile(url, destPath string) error {
+func downloadFile(ctx context.Context, url, destPath string) error {
 	fmt.Printf("Downloading %s...\n", url)
-	resp, err := http.Get(url) //nolint:noctx
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return fmt.Errorf("GET %s: %w", url, err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("GET %s: %w", url, err)
 	}
@@ -166,16 +172,16 @@ func downloadFile(url, destPath string) error {
 	return nil
 }
 
-func runCommand(name string, args ...string) error {
-	cmd := exec.Command(name, args...)
+func runCommand(ctx context.Context, name string, args ...string) error {
+	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
 
 // runWSLCommand runs a wsl.exe command with WSL_UTF8=1 to ensure UTF-8 output.
-func runWSLCommand(args ...string) error {
-	cmd := exec.Command("wsl.exe", args...)
+func runWSLCommand(ctx context.Context, args ...string) error {
+	cmd := exec.CommandContext(ctx, "wsl.exe", args...)
 	cmd.Env = append(os.Environ(), "WSL_UTF8=1")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -184,15 +190,15 @@ func runWSLCommand(args ...string) error {
 
 // runDiagnostic runs a wsl.exe command for diagnostic purposes and never fails
 // the step — some commands return non-zero when there are no distributions.
-func runDiagnostic(label string, args ...string) {
+func runDiagnostic(ctx context.Context, label string, args ...string) {
 	fmt.Println(label)
-	if err := runWSLCommand(args...); err != nil {
+	if err := runWSLCommand(ctx, args...); err != nil {
 		fmt.Printf("WARNING: diagnostic command failed (expected in some states): %v\n", err)
 	}
 }
 
-func runInstallMSI(msiPath string) error {
-	err := runCommand("msiexec.exe", "/quiet", "/passive", "/package", msiPath)
+func runInstallMSI(ctx context.Context, msiPath string) error {
+	err := runCommand(ctx, "msiexec.exe", "/quiet", "/passive", "/package", msiPath)
 	if err == nil {
 		return nil
 	}
@@ -230,6 +236,9 @@ func writeWslConfig(vmIdleTimeout, kernel, kernelCmdLine string) error {
 }
 
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
 	version := os.Getenv("WSL_VERSION")
 	if version == "" {
 		fmt.Fprintln(os.Stderr, "Error: WSL_VERSION environment variable is required")
@@ -249,7 +258,7 @@ func main() {
 	arch := goArchToWSLArch()
 	fmt.Printf("Target architecture: %s\n", arch)
 
-	installed := getInstalledWSLVersion()
+	installed := getInstalledWSLVersion(ctx)
 	needsInstall := true
 	if installed != "" {
 		fmt.Printf("Detected installed WSL version: %s\n", installed)
@@ -272,7 +281,7 @@ func main() {
 			fmt.Printf("Using override installer URL: %s\n", msiURL)
 		} else {
 			fmt.Printf("Looking up WSL %s release on GitHub...\n", version)
-			r, err := fetchRelease(version)
+			r, err := fetchRelease(ctx, version)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error fetching release: %v\n", err)
 				os.Exit(1)
@@ -293,7 +302,7 @@ func main() {
 				fmt.Fprintf(os.Stderr, "Error creating cache dir: %v\n", err)
 				os.Exit(1)
 			}
-			if err := downloadFile(msiURL, msiPath); err != nil {
+			if err := downloadFile(ctx, msiURL, msiPath); err != nil {
 				fmt.Fprintf(os.Stderr, "Error downloading MSI: %v\n", err)
 				os.Exit(1)
 			}
@@ -302,7 +311,7 @@ func main() {
 		}
 
 		fmt.Println("Running WSL installer...")
-		if err := runInstallMSI(msiPath); err != nil {
+		if err := runInstallMSI(ctx, msiPath); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -310,15 +319,15 @@ func main() {
 	}
 
 	fmt.Println("Switching to WSL 2.")
-	if err := runWSLCommand("--set-default-version", "2"); err != nil {
+	if err := runWSLCommand(ctx, "--set-default-version", "2"); err != nil {
 		fmt.Fprintf(os.Stderr, "Error setting WSL default version: %v\n", err)
 		os.Exit(1)
 	}
 
-	runDiagnostic("Querying WSL version.", "--version")
-	runDiagnostic("Querying WSL status.", "--status")
-	runDiagnostic("Listing registered WSL distributions.", "--list", "--verbose")
-	runDiagnostic("Listing running WSL distributions.", "--list", "--running")
+	runDiagnostic(ctx, "Querying WSL version.", "--version")
+	runDiagnostic(ctx, "Querying WSL status.", "--status")
+	runDiagnostic(ctx, "Listing registered WSL distributions.", "--list", "--verbose")
+	runDiagnostic(ctx, "Listing running WSL distributions.", "--list", "--running")
 
 	if err := writeWslConfig(vmIdleTimeout, kernel, kernelCmdLine); err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing .wslconfig: %v\n", err)
