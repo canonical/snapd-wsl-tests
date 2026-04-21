@@ -4,17 +4,18 @@
 name: Install WSL
 author: Zygmunt Krynicki
 description: |
-  Install or upgrade WSL to the specified release.
+  Install or upgrade WSL to the specified release. The release assets are
+  looked up via the GitHub Releases API for microsoft/WSL.
 inputs:
-  wsl-msi-url:
-    description: URL of the MSI installer
+  wsl-version:
+    description: WSL version to install (e.g. 2.6.3)
     required: false
-    default: https://github.com/microsoft/WSL/releases/download/2.6.3/wsl.2.6.3.0.x64.msi
-  wsl-msi-file:
-    description: Name of the WSL installer
+    default: "2.6.3"
+  wsl-installer-url:
+    description: Override the MSI download URL (optional; disables MSI caching)
     required: false
-    default: wsl.2.6.3.0.x64.msi
-  # Remaining inputs describe wslconfig file:
+    default: ""
+  # Remaining inputs describe the .wslconfig file:
   # https://learn.microsoft.com/en-us/windows/wsl/wsl-config
   # Only a small subset is implemented, as needed.
   wslconfig-kernel:
@@ -22,11 +23,11 @@ inputs:
     required: false
     default: ""
   wslconfig-kernel-command-line:
-    description: Path to the Linux kernel file stored on the Windows file system
+    description: Additional kernel command line arguments
     required: false
     default: ""
   wslconfig-vm-idle-timeout:
-    description: Number of millisceconds to wait before shutting down an idle instance
+    description: Number of milliseconds to wait before shutting down an idle instance
     required: false
     default: ""
 branding:
@@ -35,135 +36,25 @@ branding:
 runs:
   using: composite
   steps:
-    - name: Cache ${{ inputs.wsl-msi-file }} WSL installer
-      id: cache-wsl-installer
+    - name: Cache WSL MSI installer
+      if: ${{ inputs.wsl-installer-url == '' }}
+      id: cache-wsl-msi
       uses: actions/cache@v5
       with:
-        path: ${{ inputs.wsl-msi-file }}
-        key: ${{ inputs.wsl-msi-file }}
-    - name: Download WSL installer version ${{ inputs.wsl-msi-file }}
-      if: ${{ steps.cache-wsl-installer.outputs.cache-hit != 'true' }}
+        path: .wsl-msi-cache/
+        key: wsl-msi-${{ inputs.wsl-version }}-${{ runner.arch }}
+
+    - name: Install/Upgrade WSL and write .wslconfig
       shell: pwsh
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        WSL_VERSION: ${{ inputs.wsl-version }}
+        WSL_INSTALLER_URL: ${{ inputs.wsl-installer-url }}
+        WSL_MSI_CACHE_DIR: .wsl-msi-cache
+        WSLCONFIG_VM_IDLE_TIMEOUT: ${{ inputs.wslconfig-vm-idle-timeout }}
+        WSLCONFIG_KERNEL: ${{ inputs.wslconfig-kernel }}
+        WSLCONFIG_KERNEL_COMMAND_LINE: ${{ inputs.wslconfig-kernel-command-line }}
       run: |
         Set-StrictMode -version latest
-        $ProgressPreference = 'SilentlyContinue'
-        Write-Output "Downloading WSL installer release from GitHub..."
-        Invoke-WebRequest -Uri "${{ inputs.wsl-msi-url }}" -OutFile "${{ inputs.wsl-msi-file }}" -UseBasicParsing
-        if ( ! $? ) {
-          exit 1
-        }
-    - name: Install/Upgrade WSL
-      shell: pwsh
-      run: |
-        Set-StrictMode -version latest
-
-        function Get-WslVersion {
-          try {
-            $output = & wsl.exe --version 2>&1
-            if ($LASTEXITCODE -ne 0) {
-              return $null
-            }
-
-            $versionLine = $output | Select-String -Pattern '^WSL version:\s*([0-9.]+)$'
-            if ($null -eq $versionLine) {
-              return $null
-            }
-            return $versionLine.Matches[0].Groups[1].Value
-          } catch {
-            return $null
-          }
-        }
-
-        function Invoke-CheckedProcess {
-          param(
-            [Parameter(Mandatory = $true)]
-            [string] $FilePath,
-            [Parameter(Mandatory = $true)]
-            [string[]] $ArgumentList
-          )
-
-          $process = Start-Process -NoNewWindow -Wait -PassThru -FilePath $FilePath -ArgumentList $ArgumentList
-          if ($process.ExitCode -ne 0) {
-            Write-Error "Command failed with exit code $($process.ExitCode): $FilePath $($ArgumentList -join ' ')"
-            exit $process.ExitCode
-          }
-        }
-
-        function Invoke-WslDiagnosticCommand {
-          param(
-            [Parameter(Mandatory = $true)]
-            [string[]] $ArgumentList,
-            [string] $AllowedErrorPattern = ""
-          )
-
-          $output = & wsl.exe @ArgumentList 2>&1
-          $exitCode = $LASTEXITCODE
-          if ($output) {
-            $output | ForEach-Object { Write-Output $_ }
-          }
-          if ($exitCode -eq 0) {
-            return
-          }
-
-          $message = ($output | Out-String)
-          if ($AllowedErrorPattern -ne "" -and $message -match $AllowedErrorPattern) {
-            Write-Warning "Ignoring expected WSL diagnostic failure for arguments: $($ArgumentList -join ' ')"
-            $global:LASTEXITCODE = 0
-            return
-          }
-
-          Write-Error "Command failed with exit code ${exitCode}: wsl.exe $($ArgumentList -join ' ')"
-          exit $exitCode
-        }
-
-        $desiredWslVersionMatch = [regex]::Match("${{ inputs.wsl-msi-file }}", '([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)')
-        $desiredWslVersion = $null
-        if ($desiredWslVersionMatch.Success) {
-          $desiredWslVersion = $desiredWslVersionMatch.Groups[1].Value
-        }
-
-        $currentWslVersion = Get-WslVersion
-        if ($null -ne $currentWslVersion) {
-          Write-Output "Detected WSL version before install: $currentWslVersion"
-        } else {
-          Write-Output "Unable to detect a pre-installed WSL version before install."
-        }
-
-        Write-Output "Running WSL installer..."
-        if ($null -ne $desiredWslVersion -and $currentWslVersion -eq $desiredWslVersion) {
-          Write-Output "WSL $desiredWslVersion is already installed; skipping MSI installation."
-        } else {
-          Invoke-CheckedProcess -FilePath "msiexec.exe" -ArgumentList @("/quiet", "/passive", "/package", "${{ inputs.wsl-msi-file }}")
-        }
-        Write-Output "Switching to WSL 2."
-        Invoke-CheckedProcess -FilePath "wsl.exe" -ArgumentList @("--set-default-version", "2")
-        Write-Output "Querying WSL version and status."
-        Invoke-CheckedProcess -FilePath "wsl.exe" -ArgumentList @("--version")
-        Invoke-CheckedProcess -FilePath "wsl.exe" -ArgumentList @("--status")
-        Write-Output "Listing registered WSL distributions."
-        Invoke-WslDiagnosticCommand -ArgumentList @("--list", "--verbose") -AllowedErrorPattern '(?i)has no installed distributions'
-        Write-Output "Listing running WSL distributions."
-        Invoke-WslDiagnosticCommand -ArgumentList @("--list", "--running") -AllowedErrorPattern '(?i)(has no installed distributions|there are no running distributions)'
-
-    - name: Create a .wslconfig file
-      shell: pwsh
-      run: |
-        Set-StrictMode -version latest
-
-        Write-Output "Preparing WSL configuration file."
-        # This is expanded using single quote at string, since the expansion is
-        # done by GitHub logic, not powershell.
-        $WslConfig = @'
-        [wsl2]
-        ${{ inputs.wslconfig-vm-idle-timeout != '' && format('vmIdleTimeout = {0}', inputs.wslconfig-vm-idle-timeout) || '# vmIdleTimeout is not set' }}
-        ${{ inputs.wslconfig-kernel != '' && format('kernel = {0}', inputs.wslconfig-kernel) || '# kernel is not set' }}
-        ${{ inputs.wslconfig-kernel-command-line != '' && format('kernelCommandLine = {0}', inputs.wslconfig-kernel-command-line) || '# kernelCommandLine is not set' }}
-        '@.Replace('\', '\\')
-
-        New-Item -Force -ItemType File -Path "${Env:USERPROFILE}" -Name ".wslconfig" -Value "$WslConfig"
-        if ( ! $? ) {
-          Write-Error "Cannot create WSL configuration file."
-          exit 1
-        }
-
-        type "${Env:USERPROFILE}/.wslconfig"
+        go run ./cmd/install-wsl
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
