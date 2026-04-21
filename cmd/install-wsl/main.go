@@ -50,7 +50,7 @@ func fetchRelease(ctx context.Context, version string) (*release, error) {
 	url := "https://api.github.com/repos/microsoft/WSL/releases/tags/" + version
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+		return nil, fmt.Errorf("cannot look up WSL release (create request): %w", err)
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
@@ -59,16 +59,16 @@ func fetchRelease(ctx context.Context, version string) (*release, error) {
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetching release: %w", err)
+		return nil, fmt.Errorf("cannot look up WSL release (fetch): %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("GitHub API returned %d: %s", resp.StatusCode, body)
+		return nil, fmt.Errorf("cannot look up WSL release (HTTP %d): %s", resp.StatusCode, body)
 	}
 	var r release
 	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
-		return nil, fmt.Errorf("decoding release: %w", err)
+		return nil, fmt.Errorf("cannot look up WSL release (decode response): %w", err)
 	}
 	return &r, nil
 }
@@ -83,7 +83,7 @@ func findMSIAsset(r *release, arch string) (*asset, error) {
 			return &r.Assets[i], nil
 		}
 	}
-	return nil, fmt.Errorf("no MSI asset for architecture %q in release %s", arch, r.TagName)
+	return nil, fmt.Errorf("cannot find MSI asset for architecture %q in release %s", arch, r.TagName)
 }
 
 // goArchToWSLArch converts the Go runtime architecture to the WSL asset suffix.
@@ -178,7 +178,7 @@ func downloadFile(ctx context.Context, url, destPath string) error {
 	slog.Info("downloading", "url", url)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return fmt.Errorf("GET %s: %w", url, err)
+		return fmt.Errorf("cannot download MSI file (request): %w", err)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -186,16 +186,16 @@ func downloadFile(ctx context.Context, url, destPath string) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download %s: HTTP %d", url, resp.StatusCode)
+		return fmt.Errorf("cannot download MSI file (HTTP %d): %w", resp.StatusCode, err)
 	}
 	f, err := os.Create(destPath)
 	if err != nil {
-		return fmt.Errorf("creating %s: %w", destPath, err)
+		return fmt.Errorf("cannot download MSI file (create file %s): %w", destPath, err)
 	}
 	defer f.Close()
 	n, err := io.Copy(f, resp.Body)
 	if err != nil {
-		return fmt.Errorf("writing %s: %w", destPath, err)
+		return fmt.Errorf("cannot download MSI file (write %s): %w", destPath, err)
 	}
 	slog.Info("download complete", "bytes", n)
 	return nil
@@ -240,7 +240,7 @@ func runInstallMSI(ctx context.Context, msiPath string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("msiexec /package %s: %w", msiPath, err)
+	return fmt.Errorf("cannot run msiexec (install package %s): %w", msiPath, err)
 }
 
 type wslConfig struct {
@@ -252,7 +252,7 @@ type wslConfig struct {
 func writeWslConfig(cfg wslConfig) error {
 	userProfile := os.Getenv("USERPROFILE")
 	if userProfile == "" {
-		return fmt.Errorf("USERPROFILE not set")
+		return fmt.Errorf("cannot write .wslconfig: USERPROFILE not set")
 	}
 
 	var bb bytes.Buffer
@@ -299,7 +299,7 @@ func run(ctx context.Context) error {
 
 	installed, err := getInstalledWSLVersion(ctx)
 	if err != nil {
-		return fmt.Errorf("detecting installed WSL version: %w", err)
+		return fmt.Errorf("cannot detect installed WSL version: %w", err)
 	}
 
 	needsInstall := true
@@ -307,7 +307,7 @@ func run(ctx context.Context) error {
 		slog.Info("detected installed WSL version", "version", installed)
 		cmp, err := compareVersions(installed, version)
 		if err != nil {
-			return fmt.Errorf("comparing versions: %w", err)
+			return fmt.Errorf("cannot compare versions: %w", err)
 		}
 		if cmp >= 0 {
 			slog.Info("WSL already installed at sufficient version; skipping MSI installation",
@@ -331,11 +331,11 @@ func run(ctx context.Context) error {
 			slog.Info("looking up WSL release on GitHub", "version", version)
 			r, err := fetchRelease(ctx, version)
 			if err != nil {
-				return fmt.Errorf("fetching release: %w", err)
+				return fmt.Errorf("cannot look up WSL release (fetch): %w", err)
 			}
 			a, err := findMSIAsset(r, arch)
 			if err != nil {
-				return fmt.Errorf("finding MSI asset: %w", err)
+				return fmt.Errorf("cannot find MSI asset: %w", err)
 			}
 			msiURL = a.BrowserDownloadURL
 			msiFilename = a.Name
@@ -345,10 +345,10 @@ func run(ctx context.Context) error {
 		msiPath := filepath.Join(cacheDir, msiFilename)
 		if _, err := os.Stat(msiPath); os.IsNotExist(err) {
 			if err := os.MkdirAll(cacheDir, 0o755); err != nil {
-				return fmt.Errorf("creating cache dir: %w", err)
+				return fmt.Errorf("cannot create MSI cache directory: %w", err)
 			}
 			if err := downloadFile(ctx, msiURL, msiPath); err != nil {
-				return fmt.Errorf("downloading MSI: %w", err)
+				return fmt.Errorf("cannot download WSL installer: %w", err)
 			}
 		} else {
 			slog.Info("using cached installer", "path", msiPath)
@@ -363,7 +363,7 @@ func run(ctx context.Context) error {
 
 	slog.Info("switching to WSL 2")
 	if err := runWSLCommand(ctx, "--set-default-version", "2"); err != nil {
-		return fmt.Errorf("setting WSL default version: %w", err)
+		return fmt.Errorf("cannot set WSL default version: %w", err)
 	}
 
 	runDiagnostic(ctx, "querying WSL version", "--version")
@@ -376,7 +376,7 @@ func run(ctx context.Context) error {
 		Kernel:            kernel,
 		KernelCommandLine: kernelCmdLine,
 	}); err != nil {
-		return fmt.Errorf("writing .wslconfig: %w", err)
+		return fmt.Errorf("cannot write .wslconfig file: %w", err)
 	}
 
 	slog.Info("done")
