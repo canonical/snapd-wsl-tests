@@ -25,13 +25,16 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // release is the subset of the GitHub releases API response we need.
@@ -45,6 +48,12 @@ type asset struct {
 	BrowserDownloadURL string `json:"browser_download_url"`
 }
 
+// httpClient is an HTTP client with a reasonable timeout to prevent
+// hanging on stalled connections.
+var httpClient = &http.Client{
+	Timeout: 5 * 60 * time.Second, // 5 minutes
+}
+
 // fetchRelease queries the GitHub releases API for the microsoft/WSL repo.
 func fetchRelease(ctx context.Context, version string) (*release, error) {
 	url := "https://api.github.com/repos/microsoft/WSL/releases/tags/" + version
@@ -52,12 +61,13 @@ func fetchRelease(ctx context.Context, version string) (*release, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot look up WSL release (create request): %w", err)
 	}
+	req.Header.Set("User-Agent", "snapd-wsl-tests/install-wsl")
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("cannot look up WSL release (fetch): %w", err)
 	}
@@ -180,22 +190,32 @@ func downloadFile(ctx context.Context, url, destPath string) error {
 	if err != nil {
 		return fmt.Errorf("cannot download MSI file (request): %w", err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("GET %s: %w", url, err)
+		return fmt.Errorf("cannot download MSI file (fetch): %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("cannot download MSI file (HTTP %d): %w", resp.StatusCode, err)
 	}
-	f, err := os.Create(destPath)
+	tmpFile := destPath + ".tmp"
+	f, err := os.Create(tmpFile)
 	if err != nil {
-		return fmt.Errorf("cannot download MSI file (create file %s): %w", destPath, err)
+		return fmt.Errorf("cannot download MSI file (create temp file): %w", err)
 	}
-	defer f.Close()
+	defer func() {
+		_ = os.Remove(tmpFile) // Best effort cleanup on error
+	}()
 	n, err := io.Copy(f, resp.Body)
 	if err != nil {
-		return fmt.Errorf("cannot download MSI file (write %s): %w", destPath, err)
+		f.Close()
+		return fmt.Errorf("cannot download MSI file (write): %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("cannot download MSI file (close): %w", err)
+	}
+	if err := os.Rename(tmpFile, destPath); err != nil {
+		return fmt.Errorf("cannot download MSI file (rename): %w", err)
 	}
 	slog.Info("download complete", "bytes", n)
 	return nil
@@ -324,8 +344,14 @@ func run(ctx context.Context) error {
 		var msiURL, msiFilename string
 		if installerURL != "" {
 			msiURL = installerURL
-			parts := strings.Split(msiURL, "/")
-			msiFilename = parts[len(parts)-1]
+			u, err := url.Parse(msiURL)
+			if err != nil {
+				return fmt.Errorf("cannot parse installer URL: %w", err)
+			}
+			msiFilename = path.Base(u.Path)
+			if msiFilename == "" || msiFilename == "." {
+				return fmt.Errorf("cannot extract filename from installer URL: %q", msiURL)
+			}
 			slog.Info("using override installer URL", "url", msiURL)
 		} else {
 			slog.Info("looking up WSL release on GitHub", "version", version)
@@ -343,7 +369,12 @@ func run(ctx context.Context) error {
 		}
 
 		msiPath := filepath.Join(cacheDir, msiFilename)
-		if _, err := os.Stat(msiPath); os.IsNotExist(err) {
+		_, statErr := os.Stat(msiPath)
+		if statErr != nil {
+			if !os.IsNotExist(statErr) {
+				return fmt.Errorf("cannot check cache file: %w", statErr)
+			}
+			// File does not exist; download it.
 			if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 				return fmt.Errorf("cannot create MSI cache directory: %w", err)
 			}
