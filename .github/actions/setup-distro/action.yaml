@@ -88,7 +88,15 @@ runs:
           if ($attempt -gt 1) {
             Write-Output "Retrying WSL import (attempt $attempt of $maxAttempts)..."
             Write-Output "Cleaning up partial import state..."
-            wsl --unregister "${Env:WSL_DISTRO_NAME}"
+            $unregisterOutput = wsl --unregister "${Env:WSL_DISTRO_NAME}" 2>&1
+            if ($LASTEXITCODE -ne 0) {
+              $unregisterMessage = ($unregisterOutput | Out-String)
+              if ($unregisterMessage -notmatch '(?i)there is no distribution with the supplied name|distribution.*not found|was not found') {
+                Write-Error "Failed to unregister WSL distro ${Env:WSL_DISTRO_NAME}: $unregisterMessage"
+                exit 1
+              }
+              Write-Output "WSL distro ${Env:WSL_DISTRO_NAME} was already unregistered."
+            }
             $vmPath = ".\${Env:WSL_VMS_DIR}\${Env:WSL_DISTRO_NAME}"
             if (Test-Path -PathType Container -LiteralPath $vmPath) {
               Remove-Item -Recurse -Force -LiteralPath $vmPath
