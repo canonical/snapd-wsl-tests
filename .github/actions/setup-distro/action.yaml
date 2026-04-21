@@ -81,6 +81,149 @@ runs:
           New-Item -ItemType Directory -Name ${Env:WSL_VMS_DIR}
         }
 
+        function Invoke-WslDiagnosticCommand {
+          param(
+            [Parameter(Mandatory = $true)]
+            [string] $Label,
+            [Parameter(Mandatory = $true)]
+            [string[]] $Arguments
+          )
+
+          Write-Output $Label
+          try {
+            & wsl.exe @Arguments 2>&1 | ForEach-Object { Write-Output $_ }
+            Write-Output "Exit code: $LASTEXITCODE"
+          } catch {
+            Write-Warning "${Label} failed: $($_.Exception.Message)"
+          }
+          Write-Output ""
+        }
+
+        function Show-RecentEventLog {
+          param(
+            [Parameter(Mandatory = $true)]
+            [string] $LogName,
+            [Parameter(Mandatory = $true)]
+            [datetime] $StartTime,
+            [int] $MaxEvents = 20
+          )
+
+          Write-Output "Recent events from ${LogName}:"
+          try {
+            $log = Get-WinEvent -ListLog $LogName -ErrorAction Stop
+            if (-not $log.IsEnabled) {
+              Write-Output "Log ${LogName} is disabled."
+              Write-Output ""
+              return
+            }
+            $events = @(Get-WinEvent -FilterHashtable @{ LogName = $LogName; StartTime = $StartTime } -MaxEvents $MaxEvents -ErrorAction Stop)
+            if ($events.Count -eq 0) {
+              Write-Output "No recent events."
+            } else {
+              $events |
+                Select-Object TimeCreated, Id, LevelDisplayName, ProviderName, Message |
+                Format-List |
+                Out-String -Width 220 -Stream |
+                ForEach-Object { Write-Output $_ }
+            }
+          } catch {
+            Write-Warning "Unable to read log ${LogName}: $($_.Exception.Message)"
+          }
+          Write-Output ""
+        }
+
+        function Show-RecentEventLogByProvider {
+          param(
+            [Parameter(Mandatory = $true)]
+            [string] $LogName,
+            [Parameter(Mandatory = $true)]
+            [string[]] $ProviderName,
+            [Parameter(Mandatory = $true)]
+            [datetime] $StartTime,
+            [int] $MaxEvents = 20
+          )
+
+          Write-Output "Recent events from ${LogName} for providers: $($ProviderName -join ', ')"
+          try {
+            $events = @(Get-WinEvent -FilterHashtable @{
+              LogName = $LogName
+              ProviderName = $ProviderName
+              StartTime = $StartTime
+            } -MaxEvents $MaxEvents -ErrorAction Stop)
+            if ($events.Count -eq 0) {
+              Write-Output "No recent events."
+            } else {
+              $events |
+                Select-Object TimeCreated, Id, LevelDisplayName, ProviderName, Message |
+                Format-List |
+                Out-String -Width 220 -Stream |
+                ForEach-Object { Write-Output $_ }
+            }
+          } catch {
+            Write-Warning "Unable to read ${LogName} events for providers $($ProviderName -join ', '): $($_.Exception.Message)"
+          }
+          Write-Output ""
+        }
+
+        function Show-WslImportDiagnostics {
+          param(
+            [Parameter(Mandatory = $true)]
+            [string] $Reason
+          )
+
+          $diagnosticWindowStart = (Get-Date).AddMinutes(-15)
+          $vmPath = ".\${Env:WSL_VMS_DIR}\${Env:WSL_DISTRO_NAME}"
+          $rootfsPath = ".\${Env:WSL_ROOTFSES_DIR}\${Env:WSL_ROOTFS_FILE}"
+
+          Write-Output "::group::WSL import diagnostics (${Reason})"
+          Write-Output "Timestamp: $(Get-Date -Format o)"
+          Write-Output "WSL distro: ${Env:WSL_DISTRO_NAME}"
+          Write-Output "WSL VM path: $vmPath"
+          Write-Output "WSL rootfs path: $rootfsPath"
+          Write-Output ""
+
+          Write-Output "WSL service state:"
+          Get-Service -Name WslService, LxssManager -ErrorAction SilentlyContinue |
+            Select-Object Name, Status, StartType |
+            Format-Table -AutoSize |
+            Out-String -Width 220 -Stream |
+            ForEach-Object { Write-Output $_ }
+          Write-Output ""
+
+          Write-Output "WSL-related processes:"
+          Get-Process -Name wsl, wslservice -ErrorAction SilentlyContinue |
+            Select-Object Name, Id, StartTime, Path |
+            Format-Table -AutoSize |
+            Out-String -Width 220 -Stream |
+            ForEach-Object { Write-Output $_ }
+          Write-Output ""
+
+          Write-Output "WSL filesystem state:"
+          Get-Item -LiteralPath $rootfsPath -ErrorAction SilentlyContinue |
+            Select-Object FullName, Length, LastWriteTime |
+            Format-List |
+            Out-String -Width 220 -Stream |
+            ForEach-Object { Write-Output $_ }
+          Get-ChildItem -Force -LiteralPath $vmPath -ErrorAction SilentlyContinue |
+            Select-Object Mode, LastWriteTime, Length, Name |
+            Format-Table -AutoSize |
+            Out-String -Width 220 -Stream |
+            ForEach-Object { Write-Output $_ }
+          Write-Output ""
+
+          Invoke-WslDiagnosticCommand -Label "wsl.exe --version" -Arguments @("--version")
+          Invoke-WslDiagnosticCommand -Label "wsl.exe --status" -Arguments @("--status")
+          Invoke-WslDiagnosticCommand -Label "wsl.exe --list --verbose" -Arguments @("--list", "--verbose")
+
+          Show-RecentEventLog -LogName "Microsoft-Windows-Lxss/Operational" -StartTime $diagnosticWindowStart
+          Show-RecentEventLog -LogName "Microsoft-Windows-Hyper-V-Compute-Admin" -StartTime $diagnosticWindowStart
+          Show-RecentEventLog -LogName "Microsoft-Windows-Hyper-V-Compute-Operational" -StartTime $diagnosticWindowStart
+          Show-RecentEventLogByProvider -LogName "Application" -ProviderName @("Application Error", "Windows Error Reporting") -StartTime $diagnosticWindowStart
+          Show-RecentEventLogByProvider -LogName "System" -ProviderName @("Service Control Manager") -StartTime $diagnosticWindowStart
+
+          Write-Output "::endgroup::"
+        }
+
         Write-Output "Importing ${Env:WSL_ROOTFSES_DIR}\${Env:WSL_ROOTFS_FILE} RootFS into WSL..."
         $maxAttempts = 3
         $imported = $false
@@ -92,6 +235,7 @@ runs:
             if ($LASTEXITCODE -ne 0) {
               $unregisterMessage = ($unregisterOutput | Out-String)
               if ($unregisterMessage -notmatch '(?i)there is no distribution with the supplied name|distribution.*not found|was not found') {
+                Show-WslImportDiagnostics -Reason "unexpected unregister failure after import attempt $($attempt - 1)"
                 Write-Error "Failed to unregister WSL distro ${Env:WSL_DISTRO_NAME}: $unregisterMessage"
                 exit 1
               }
@@ -136,6 +280,7 @@ runs:
             $imported = $true
             break
           }
+          Show-WslImportDiagnostics -Reason "import attempt $attempt of $maxAttempts failed"
           Write-Warning "WSL import attempt $attempt of $maxAttempts failed."
         }
         if ( -not $imported ) {
