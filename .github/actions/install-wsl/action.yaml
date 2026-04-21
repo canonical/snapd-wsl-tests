@@ -89,6 +89,32 @@ runs:
           }
         }
 
+        function Invoke-WslDiagnosticCommand {
+          param(
+            [Parameter(Mandatory = $true)]
+            [string[]] $ArgumentList,
+            [string] $AllowedErrorPattern = ""
+          )
+
+          $output = & wsl.exe @ArgumentList 2>&1
+          $exitCode = $LASTEXITCODE
+          if ($output) {
+            $output | ForEach-Object { Write-Output $_ }
+          }
+          if ($exitCode -eq 0) {
+            return
+          }
+
+          $message = ($output | Out-String)
+          if ($AllowedErrorPattern -ne "" -and $message -match $AllowedErrorPattern) {
+            Write-Warning "Ignoring expected WSL diagnostic failure for arguments: $($ArgumentList -join ' ')"
+            return
+          }
+
+          Write-Error "Command failed with exit code ${exitCode}: wsl.exe $($ArgumentList -join ' ')"
+          exit $exitCode
+        }
+
         $desiredWslVersionMatch = [regex]::Match("${{ inputs.wsl-msi-file }}", '([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)')
         $desiredWslVersion = $null
         if ($desiredWslVersionMatch.Success) {
@@ -114,9 +140,9 @@ runs:
         Invoke-CheckedProcess -FilePath "wsl.exe" -ArgumentList @("--version")
         Invoke-CheckedProcess -FilePath "wsl.exe" -ArgumentList @("--status")
         Write-Output "Listing registered WSL distributions."
-        Invoke-CheckedProcess -FilePath "wsl.exe" -ArgumentList @("--list", "--verbose")
+        Invoke-WslDiagnosticCommand -ArgumentList @("--list", "--verbose") -AllowedErrorPattern '(?i)has no installed distributions'
         Write-Output "Listing running WSL distributions."
-        Invoke-CheckedProcess -FilePath "wsl.exe" -ArgumentList @("--list", "--running")
+        Invoke-WslDiagnosticCommand -ArgumentList @("--list", "--running") -AllowedErrorPattern '(?i)has no installed distributions'
 
     - name: Create a .wslconfig file
       shell: pwsh
