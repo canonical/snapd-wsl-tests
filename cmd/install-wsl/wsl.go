@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/canonical/snapd-wsl-tests/internal/wsl"
 )
 
 // goArchToWSLArch converts the Go runtime architecture to the WSL asset suffix.
@@ -55,28 +57,18 @@ func getInstalledWSLVersion(ctx context.Context) (string, error) {
 }
 
 func runCommand(ctx context.Context, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	return wsl.RunCommand(ctx, name, args...)
 }
 
 // runWSLCommand runs a wsl.exe command with WSL_UTF8=1 to ensure UTF-8 output.
 func runWSLCommand(ctx context.Context, args ...string) error {
-	cmd := exec.CommandContext(ctx, "wsl.exe", args...)
-	cmd.Env = append(os.Environ(), "WSL_UTF8=1")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	return wsl.RunWSLCommand(ctx, args...)
 }
 
 // runDiagnostic runs a wsl.exe command for diagnostic purposes and never fails
 // the step — some commands return non-zero when there are no distributions.
 func runDiagnostic(ctx context.Context, label string, args ...string) {
-	slog.Info(label)
-	if err := runWSLCommand(ctx, args...); err != nil {
-		slog.Warn("Diagnostic command failed (expected in some states)", "err", err)
-	}
+	wsl.RunDiagnostic(ctx, label, args...)
 }
 
 func runInstallMSI(ctx context.Context, msiPath string) error {
