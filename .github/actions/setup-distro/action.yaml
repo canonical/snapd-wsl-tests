@@ -102,7 +102,17 @@ runs:
               Remove-Item -Recurse -Force -LiteralPath $vmPath
             }
             Write-Output "Restarting WSL service to recover from connection error..."
-            Restart-Service LxssManager -Force -ErrorAction SilentlyContinue
+            try {
+              Restart-Service LxssManager -Force -ErrorAction Stop
+              $lxssManagerService = Get-Service LxssManager -ErrorAction Stop
+              if ($lxssManagerService.Status -ne 'Running') {
+                Write-Warning "WSL service restart completed but LxssManager is '$($lxssManagerService.Status)'; subsequent import attempts may still fail."
+              } else {
+                Write-Output "WSL service LxssManager is running after restart."
+              }
+            } catch {
+              Write-Warning "Failed to restart WSL service LxssManager: $($_.Exception.Message). Subsequent import attempts may still fail."
+            }
             Start-Sleep -Seconds 10
           }
           wsl `
