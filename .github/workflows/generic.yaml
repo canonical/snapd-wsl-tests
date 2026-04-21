@@ -127,8 +127,34 @@ jobs:
           Write-Output "Terminating ${{ inputs.distro-name }} WSL instance..."
           $DistroName = '${{ inputs.wsl-distro-name }}'
 
-          Start-Process -NoNewWindow -Wait -FilePath "wsl.exe" -ArgumentList "--terminate $DistroName"
-          Start-Process -NoNewWindow -Wait -FilePath "wsl.exe" -ArgumentList "--unregister $DistroName"
+          function Invoke-WslCleanupCommand {
+            param(
+              [Parameter(Mandatory = $true)]
+              [string] $Action,
+              [Parameter(Mandatory = $true)]
+              [string[]] $Arguments
+            )
+
+            $output = & wsl.exe @Arguments 2>&1
+            $exitCode = $LASTEXITCODE
+            if ($output) {
+              $output | ForEach-Object { Write-Output $_ }
+            }
+            if ($exitCode -eq 0) {
+              return
+            }
+
+            $message = ($output | Out-String)
+            if ($message -match '(?i)there is no distribution with the supplied name|distribution.*not found|was not found') {
+              Write-Warning "WSL distro ${DistroName} was already absent during ${Action}."
+              return
+            }
+
+            Write-Warning "Failed to ${Action} WSL distro ${DistroName}: $message"
+          }
+
+          Invoke-WslCleanupCommand -Action "termination" -Arguments @("--terminate", $DistroName)
+          Invoke-WslCleanupCommand -Action "unregister" -Arguments @("--unregister", $DistroName)
 
   docker:
     name: "Smoke test with \"docker\" snap"
@@ -257,8 +283,34 @@ jobs:
           Write-Output "Terminating ${{ inputs.distro-name }} WSL instance..."
           $DistroName = '${{ inputs.wsl-distro-name }}'
 
-          Start-Process -NoNewWindow -Wait -FilePath "wsl.exe" -ArgumentList "--terminate $DistroName"
-          Start-Process -NoNewWindow -Wait -FilePath "wsl.exe" -ArgumentList "--unregister $DistroName"
+          function Invoke-WslCleanupCommand {
+            param(
+              [Parameter(Mandatory = $true)]
+              [string] $Action,
+              [Parameter(Mandatory = $true)]
+              [string[]] $Arguments
+            )
+
+            $output = & wsl.exe @Arguments 2>&1
+            $exitCode = $LASTEXITCODE
+            if ($output) {
+              $output | ForEach-Object { Write-Output $_ }
+            }
+            if ($exitCode -eq 0) {
+              return
+            }
+
+            $message = ($output | Out-String)
+            if ($message -match '(?i)there is no distribution with the supplied name|distribution.*not found|was not found') {
+              Write-Warning "WSL distro ${DistroName} was already absent during ${Action}."
+              return
+            }
+
+            Write-Warning "Failed to ${Action} WSL distro ${DistroName}: $message"
+          }
+
+          Invoke-WslCleanupCommand -Action "termination" -Arguments @("--terminate", $DistroName)
+          Invoke-WslCleanupCommand -Action "unregister" -Arguments @("--unregister", $DistroName)
 
   snapcraft-lxd:
     name: "Smoke test with \"snapcraft\" and \"lxd\" snaps"
@@ -382,8 +434,34 @@ jobs:
           Write-Output "Terminating ${{ inputs.distro-name }} WSL instance..."
           $DistroName = '${{ inputs.wsl-distro-name }}'
 
-          Start-Process -NoNewWindow -Wait -FilePath "wsl.exe" -ArgumentList "--terminate $DistroName"
-          Start-Process -NoNewWindow -Wait -FilePath "wsl.exe" -ArgumentList "--unregister $DistroName"
+          function Invoke-WslCleanupCommand {
+            param(
+              [Parameter(Mandatory = $true)]
+              [string] $Action,
+              [Parameter(Mandatory = $true)]
+              [string[]] $Arguments
+            )
+
+            $output = & wsl.exe @Arguments 2>&1
+            $exitCode = $LASTEXITCODE
+            if ($output) {
+              $output | ForEach-Object { Write-Output $_ }
+            }
+            if ($exitCode -eq 0) {
+              return
+            }
+
+            $message = ($output | Out-String)
+            if ($message -match '(?i)there is no distribution with the supplied name|distribution.*not found|was not found') {
+              Write-Warning "WSL distro ${DistroName} was already absent during ${Action}."
+              return
+            }
+
+            Write-Warning "Failed to ${Action} WSL distro ${DistroName}: $message"
+          }
+
+          Invoke-WslCleanupCommand -Action "termination" -Arguments @("--terminate", $DistroName)
+          Invoke-WslCleanupCommand -Action "unregister" -Arguments @("--unregister", $DistroName)
 
   hello-world_evil:
     name: "Smoke test with \"hello-world\" snap"
@@ -535,5 +613,32 @@ jobs:
         run: |
           Set-StrictMode -version latest
           Write-Output "Terminating ${Env:WSL_DISTRO_NAME} WSL instance..."
-          wsl --terminate ${Env:WSL_DISTRO_NAME}
-          wsl --unregister ${Env:WSL_DISTRO_NAME}
+
+          function Invoke-WslCleanupCommand {
+            param(
+              [Parameter(Mandatory = $true)]
+              [string] $Action,
+              [Parameter(Mandatory = $true)]
+              [string[]] $Arguments
+            )
+
+            $output = & wsl.exe @Arguments 2>&1
+            $exitCode = $LASTEXITCODE
+            if ($output) {
+              $output | ForEach-Object { Write-Output $_ }
+            }
+            if ($exitCode -eq 0) {
+              return
+            }
+
+            $message = ($output | Out-String)
+            if ($message -match '(?i)there is no distribution with the supplied name|distribution.*not found|was not found') {
+              Write-Warning "WSL distro ${Env:WSL_DISTRO_NAME} was already absent during ${Action}."
+              return
+            }
+
+            Write-Warning "Failed to ${Action} WSL distro ${Env:WSL_DISTRO_NAME}: $message"
+          }
+
+          Invoke-WslCleanupCommand -Action "termination" -Arguments @("--terminate", "${Env:WSL_DISTRO_NAME}")
+          Invoke-WslCleanupCommand -Action "unregister" -Arguments @("--unregister", "${Env:WSL_DISTRO_NAME}")
