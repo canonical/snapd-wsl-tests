@@ -142,7 +142,7 @@ runs:
         Write-Output "Listing registered WSL distributions."
         Invoke-WslDiagnosticCommand -ArgumentList @("--list", "--verbose") -AllowedErrorPattern '(?i)has no installed distributions'
         Write-Output "Listing running WSL distributions."
-        Invoke-WslDiagnosticCommand -ArgumentList @("--list", "--running") -AllowedErrorPattern '(?i)has no installed distributions'
+        Invoke-WslDiagnosticCommand -ArgumentList @("--list", "--running") -AllowedErrorPattern '(?i)(has no installed distributions|there are no running distributions)'
 
     - name: Create a .wslconfig file
       shell: pwsh
