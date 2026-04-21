@@ -108,6 +108,7 @@ runs:
           $message = ($output | Out-String)
           if ($AllowedErrorPattern -ne "" -and $message -match $AllowedErrorPattern) {
             Write-Warning "Ignoring expected WSL diagnostic failure for arguments: $($ArgumentList -join ' ')"
+            $global:LASTEXITCODE = 0
             return
           }
 
