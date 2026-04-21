@@ -127,14 +127,10 @@ func TestWriteWslConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tmpDir := t.TempDir()
-			// Set USERPROFILE to temp dir for test
-			oldProfile := os.Getenv("USERPROFILE")
-			os.Setenv("USERPROFILE", tmpDir)
-			defer os.Setenv("USERPROFILE", oldProfile)
 
-			err := writeWslConfig(tt.cfg)
+			err := writeWslConfig(tmpDir, tt.cfg)
 			if err != nil {
-				t.Fatalf("writeWslConfig(%+v) error = %v", tt.cfg, err)
+				t.Fatalf("writeWslConfig(%q, %+v) error = %v", tmpDir, tt.cfg, err)
 			}
 
 			configPath := filepath.Join(tmpDir, ".wslconfig")

@@ -14,6 +14,8 @@
 //	WSLCONFIG_VM_IDLE_TIMEOUT optional; vmIdleTimeout value for .wslconfig
 //	WSLCONFIG_KERNEL          optional; kernel path for .wslconfig
 //	WSLCONFIG_KERNEL_COMMAND_LINE optional; kernelCommandLine for .wslconfig
+//
+// Home directory is determined via os.UserHomeDir() for .wslconfig placement.
 package main
 
 import (
@@ -55,7 +57,7 @@ var httpClient = &http.Client{
 }
 
 // fetchRelease queries the GitHub releases API for the microsoft/WSL repo.
-func fetchRelease(ctx context.Context, version string) (*release, error) {
+func fetchRelease(ctx context.Context, version, token string) (*release, error) {
 	url := "https://api.github.com/repos/microsoft/WSL/releases/tags/" + version
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -64,7 +66,7 @@ func fetchRelease(ctx context.Context, version string) (*release, error) {
 	req.Header.Set("User-Agent", "snapd-wsl-tests/install-wsl")
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	resp, err := httpClient.Do(req)
@@ -279,10 +281,9 @@ type wslConfig struct {
 	KernelCommandLine string `ini:"kernelCommandLine,omitempty"`
 }
 
-func writeWslConfig(cfg wslConfig) error {
-	userProfile := os.Getenv("USERPROFILE")
-	if userProfile == "" {
-		return fmt.Errorf("cannot write .wslconfig: USERPROFILE not set")
+func writeWslConfig(homeDir string, cfg wslConfig) error {
+	if homeDir == "" {
+		return fmt.Errorf("cannot write .wslconfig: home directory is empty")
 	}
 
 	var bb bytes.Buffer
@@ -301,7 +302,7 @@ func writeWslConfig(cfg wslConfig) error {
 		fmt.Fprintf(&bb, "kernelCommandLine = %s\n", cfg.KernelCommandLine)
 	}
 
-	configPath := filepath.Join(userProfile, ".wslconfig")
+	configPath := filepath.Join(homeDir, ".wslconfig")
 
 	slog.Info("writing wslconfig", "path", configPath)
 
@@ -309,6 +310,7 @@ func writeWslConfig(cfg wslConfig) error {
 }
 
 func run(ctx context.Context) error {
+	// Load all environment variables early
 	version := os.Getenv("WSL_VERSION")
 	if version == "" {
 		return fmt.Errorf("WSL_VERSION environment variable is required")
@@ -323,6 +325,13 @@ func run(ctx context.Context) error {
 	vmIdleTimeout := os.Getenv("WSLCONFIG_VM_IDLE_TIMEOUT")
 	kernel := os.Getenv("WSLCONFIG_KERNEL")
 	kernelCmdLine := os.Getenv("WSLCONFIG_KERNEL_COMMAND_LINE")
+
+	githubToken := os.Getenv("GITHUB_TOKEN")
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("cannot determine home directory: %w", err)
+	}
 
 	arch := goArchToWSLArch()
 	slog.Info("target architecture", "arch", arch)
@@ -367,7 +376,7 @@ func run(ctx context.Context) error {
 			slog.Info("using override installer URL", "url", u.String())
 		} else {
 			slog.Info("looking up WSL release on GitHub", "version", version)
-			r, err := fetchRelease(ctx, version)
+			r, err := fetchRelease(ctx, version, githubToken)
 			if err != nil {
 				return err // fetchRelease already wraps with context
 			}
@@ -414,7 +423,7 @@ func run(ctx context.Context) error {
 	runDiagnostic(ctx, "listing registered WSL distributions", "--list", "--verbose")
 	runDiagnostic(ctx, "listing running WSL distributions", "--list", "--running")
 
-	if err := writeWslConfig(wslConfig{
+	if err := writeWslConfig(homeDir, wslConfig{
 		VMIdleTimeout:     vmIdleTimeout,
 		Kernel:            kernel,
 		KernelCommandLine: kernelCmdLine,
