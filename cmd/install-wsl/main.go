@@ -25,7 +25,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/url"
+	neturl "net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -184,9 +184,17 @@ func compareVersions(a, b string) (int, error) {
 	return 0, nil
 }
 
-func downloadFile(ctx context.Context, url, destPath string) error {
-	slog.Info("downloading", "url", url)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+func downloadFile(ctx context.Context, downloadURL, destPath string) error {
+	// Redact query parameters (potential SAS tokens) when logging
+	parsedURL, err := neturl.Parse(downloadURL)
+	if err == nil {
+		parsedURL.RawQuery = ""
+		slog.Info("downloading", "url", parsedURL.String())
+	} else {
+		slog.Info("downloading", "url", downloadURL)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
 	if err != nil {
 		return fmt.Errorf("cannot download MSI file (request): %w", err)
 	}
@@ -196,7 +204,9 @@ func downloadFile(ctx context.Context, url, destPath string) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("cannot download MSI file (HTTP %d): %w", resp.StatusCode, err)
+		// Capture response body to include in error (may explain 403/404)
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("cannot download MSI file (HTTP %d): %s", resp.StatusCode, body)
 	}
 	tmpFile := destPath + ".tmp"
 	f, err := os.Create(tmpFile)
@@ -344,7 +354,7 @@ func run(ctx context.Context) error {
 		var msiURL, msiFilename string
 		if installerURL != "" {
 			msiURL = installerURL
-			u, err := url.Parse(msiURL)
+			u, err := neturl.Parse(msiURL)
 			if err != nil {
 				return fmt.Errorf("cannot parse installer URL: %w", err)
 			}
@@ -352,12 +362,14 @@ func run(ctx context.Context) error {
 			if msiFilename == "" || msiFilename == "." {
 				return fmt.Errorf("cannot extract filename from installer URL: %q", msiURL)
 			}
-			slog.Info("using override installer URL", "url", msiURL)
+			// Redact query parameters (potential SAS tokens) when logging
+			u.RawQuery = ""
+			slog.Info("using override installer URL", "url", u.String())
 		} else {
 			slog.Info("looking up WSL release on GitHub", "version", version)
 			r, err := fetchRelease(ctx, version)
 			if err != nil {
-				return fmt.Errorf("cannot look up WSL release (fetch): %w", err)
+				return err // fetchRelease already wraps with context
 			}
 			a, err := findMSIAsset(r, arch)
 			if err != nil {
