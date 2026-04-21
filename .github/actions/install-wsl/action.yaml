@@ -75,6 +75,16 @@ runs:
         if ( ! $? ) {
           exit 1
         }
+        Write-Output "Listing registered WSL distributions."
+        Start-Process -NoNewWindow -Wait -FilePath "wsl.exe" -ArgumentList "--list --verbose"
+        if ( ! $? ) {
+          exit 1
+        }
+        Write-Output "Listing running WSL distributions."
+        Start-Process -NoNewWindow -Wait -FilePath "wsl.exe" -ArgumentList "--list --running"
+        if ( ! $? ) {
+          exit 1
+        }
 
     - name: Create a .wslconfig file
       shell: pwsh
