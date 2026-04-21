@@ -3,4 +3,4 @@
 
 module github.com/canonical/snapd-wsl-tests
 
-go 1.24
+go 1.22
