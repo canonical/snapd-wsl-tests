@@ -152,21 +152,68 @@ runs:
         Set-StrictMode -version latest
 
         # As ironic as this is, WSL-specific init process cannot cope with \r\n
-        # line endings in the /etc/wsl.conf initialization file. Explicitly
-        # replace them with UNIX line endings and carefully write as a byte
-        # stream to avoid any accidental conversions.
-        $wslConf = @'
-        [boot]
-        systemd=true
+        # line endings in the /etc/wsl.conf initialization file. Read and write
+        # bytes directly so existing content is preserved while the [boot]
+        # systemd=true setting is updated semantically.
+        $wslConfPath = "\\wsl.localhost\${Env:WSL_DISTRO_NAME}\etc\wsl.conf"
+        $currentWslConf = ""
+        if (Test-Path -PathType Leaf -LiteralPath $wslConfPath) {
+          $currentWslConf = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($wslConfPath))
+        }
+        $currentWslConf = $currentWslConf.Replace("`r`n", "`n").Replace("`r", "`n")
 
-        '@.Replace("`r`n", "`n")
+        $updatedLines = [System.Collections.Generic.List[string]]::new()
+        $bootSectionFound = $false
+        $inBootSection = $false
+        $systemdSet = $false
+
+        $currentLines = @()
+        if ($currentWslConf -ne "") {
+          $currentLines = $currentWslConf -split "`n"
+        }
+
+        foreach ($line in $currentLines) {
+          if ($line -match '^\s*\[(.+)\]\s*$') {
+            if ($inBootSection -and -not $systemdSet) {
+              $updatedLines.Add("systemd=true")
+              $systemdSet = $true
+            }
+            $inBootSection = $Matches[1] -ieq "boot"
+            if ($inBootSection) {
+              $bootSectionFound = $true
+            }
+            $updatedLines.Add($line)
+            continue
+          }
+
+          if ($inBootSection -and $line -match '^\s*systemd\s*=') {
+            if (-not $systemdSet) {
+              $updatedLines.Add("systemd=true")
+              $systemdSet = $true
+            }
+            continue
+          }
+
+          $updatedLines.Add($line)
+        }
+
+        if ($inBootSection -and -not $systemdSet) {
+          $updatedLines.Add("systemd=true")
+          $systemdSet = $true
+        }
+
+        if (-not $bootSectionFound) {
+          if ($updatedLines.Count -gt 0 -and $updatedLines[$updatedLines.Count - 1] -ne "") {
+            $updatedLines.Add("")
+          }
+          $updatedLines.Add("[boot]")
+          $updatedLines.Add("systemd=true")
+        }
+
+        $wslConf = ($updatedLines -join "`n").TrimEnd("`n") + "`n"
 
         Write-Output "Enabling systemd boot in ${Env:WSL_DISTRO_NAME}..."
-        Add-Content `
-          -LiteralPath "\\wsl.localhost\${Env:WSL_DISTRO_NAME}\etc\wsl.conf" `
-          -Value $([System.Text.Encoding]::UTF8.GetBytes($wslConf)) `
-          -NoNewLine `
-          -AsByteStream
+        [System.IO.File]::WriteAllBytes($wslConfPath, [System.Text.Encoding]::UTF8.GetBytes($wslConf))
         if ( ! $? ) {
           Write-Error "Cannot enable systemd boot in ${Env:WSL_DISTRO_NAME}."
           exit 1
