@@ -101,17 +101,29 @@ runs:
             if (Test-Path -PathType Container -LiteralPath $vmPath) {
               Remove-Item -Recurse -Force -LiteralPath $vmPath
             }
-            Write-Output "Restarting WSL service to recover from connection error..."
-            try {
-              Restart-Service LxssManager -Force -ErrorAction Stop
-              $lxssManagerService = Get-Service LxssManager -ErrorAction Stop
-              if ($lxssManagerService.Status -ne 'Running') {
-                Write-Warning "WSL service restart completed but LxssManager is '$($lxssManagerService.Status)'; subsequent import attempts may still fail."
-              } else {
-                Write-Output "WSL service LxssManager is running after restart."
+            $wslService = $null
+            foreach ($serviceName in @('WslService', 'LxssManager')) {
+              $candidateService = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+              if ($null -ne $candidateService) {
+                $wslService = $candidateService
+                break
               }
-            } catch {
-              Write-Warning "Failed to restart WSL service LxssManager: $($_.Exception.Message). Subsequent import attempts may still fail."
+            }
+            if ($null -eq $wslService) {
+              Write-Warning "Failed to find a WSL management service (checked: WslService, LxssManager). Subsequent import attempts may still fail."
+            } else {
+              Write-Output "Restarting WSL service $($wslService.Name) to recover from connection error..."
+              try {
+                Restart-Service -InputObject $wslService -Force -ErrorAction Stop
+                $wslService = Get-Service -Name $wslService.Name -ErrorAction Stop
+                if ($wslService.Status -ne 'Running') {
+                  Write-Warning "WSL service restart completed but $($wslService.Name) is '$($wslService.Status)'; subsequent import attempts may still fail."
+                } else {
+                  Write-Output "WSL service $($wslService.Name) is running after restart."
+                }
+              } catch {
+                Write-Warning "Failed to restart WSL service $($wslService.Name): $($_.Exception.Message). Subsequent import attempts may still fail."
+              }
             }
             Start-Sleep -Seconds 10
           }
