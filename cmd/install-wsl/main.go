@@ -41,7 +41,7 @@ func run(ctx context.Context) error {
 	// Load all environment variables early
 	version := os.Getenv("WSL_VERSION")
 	if version == "" {
-		return fmt.Errorf("WSL_VERSION environment variable is required")
+		return fmt.Errorf("cannot read WSL_VERSION environment variable (required)")
 	}
 
 	installerURL := os.Getenv("WSL_INSTALLER_URL")
@@ -146,10 +146,10 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("cannot set WSL default version: %w", err)
 	}
 
-	runDiagnostic(ctx, "querying WSL version", "--version")
-	runDiagnostic(ctx, "querying WSL status", "--status")
-	runDiagnostic(ctx, "listing registered WSL distributions", "--list", "--verbose")
-	runDiagnostic(ctx, "listing running WSL distributions", "--list", "--running")
+	runDiagnostic(ctx, "Querying WSL version", "--version")
+	runDiagnostic(ctx, "Querying WSL status", "--status")
+	runDiagnostic(ctx, "Listing registered WSL distributions", "--list", "--verbose")
+	runDiagnostic(ctx, "Listing running WSL distributions", "--list", "--running")
 
 	if err := writeWslConfig(homeDir, wslConfig{
 		VMIdleTimeout:     vmIdleTimeout,
