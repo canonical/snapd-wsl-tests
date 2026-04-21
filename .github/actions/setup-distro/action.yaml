@@ -375,11 +375,31 @@ runs:
         }
 
         Write-Output "Checking if systemd is running"
-        wsl `
-          --distribution "${Env:WSL_DISTRO_NAME}" `
-          --user root `
-          --cd / `
-          systemctl is-system-running
+        $systemdState = @(
+          wsl `
+            --distribution "${Env:WSL_DISTRO_NAME}" `
+            --user root `
+            --cd / `
+            --exec /bin/sh -lc 'state="$(systemctl is-system-running --wait || true)"; printf "%s\n" "$state"; case "$state" in running|degraded) exit 0 ;; *) exit 1 ;; esac'
+        )
+        $systemdState = ($systemdState | Select-Object -Last 1).Trim()
+
+        if ($systemdState -eq "degraded") {
+          Write-Warning "systemd reached a degraded state in ${Env:WSL_DISTRO_NAME}; continuing and printing failed units for diagnostics."
+          wsl `
+            --distribution "${Env:WSL_DISTRO_NAME}" `
+            --user root `
+            --cd / `
+            --exec systemctl --failed --no-pager --full
+        } elseif ( ! $? ) {
+          Write-Error "systemd did not reach a usable state in ${Env:WSL_DISTRO_NAME} (state: $systemdState)."
+          wsl `
+            --distribution "${Env:WSL_DISTRO_NAME}" `
+            --user root `
+            --cd / `
+            --exec systemctl --failed --no-pager --full
+          exit 1
+        }
 
     - name: Setup ${{ inputs.distro-name }} WSL instance
       shell: pwsh
