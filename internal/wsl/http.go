@@ -26,8 +26,10 @@ type transport struct {
 }
 
 func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if req.Header.Get("User-Agent") == "" {
-		req.Header.Set("User-Agent", "snapd-wsl-tests-actions")
+	// Clone request before modifying headers to avoid mutating shared request objects
+	clonedReq := req.Clone(req.Context())
+	if clonedReq.Header.Get("User-Agent") == "" {
+		clonedReq.Header.Set("User-Agent", "snapd-wsl-tests-actions")
 	}
-	return t.next.RoundTrip(req)
+	return t.next.RoundTrip(clonedReq)
 }
