@@ -1,1 +1,4 @@
 *.exe
+# Go binaries compiled from local source
+/install-wsl
+/import-wsl-distro
