@@ -44,7 +44,7 @@ jobs:
     name: "Smoke test with \"hello\" snap"
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install WSL
         uses: ./.github/actions/install-wsl
@@ -155,7 +155,7 @@ jobs:
     name: "Smoke test with \"docker\" snap"
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install WSL
         uses: ./.github/actions/install-wsl
@@ -310,7 +310,7 @@ jobs:
     name: "Smoke test with \"snapcraft\" and \"lxd\" snaps"
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install WSL
         uses: ./.github/actions/install-wsl
@@ -460,7 +460,7 @@ jobs:
     name: "Smoke test with \"hello-world\" snap"
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Cache custom kernel image
         id: cache-kernel-image
