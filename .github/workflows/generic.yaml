@@ -208,7 +208,7 @@ jobs:
 
       - name: Cache ubuntu:24.04 container image
         id: cache-container-image
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ubuntu-24.04.tar.gz
           key: oci/ubuntu:24.04
@@ -464,7 +464,7 @@ jobs:
 
       - name: Cache custom kernel image
         id: cache-kernel-image
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: vmlinux-wsl2-snapd-x86_64
           key: vmlinux-wsl2-snapd-x86_64
