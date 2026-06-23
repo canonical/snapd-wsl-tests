@@ -63,7 +63,7 @@ runs:
         Write-Output "Current revision of snap ${Env:SNAP_NAME} in channel ${Env:SNAP_CHANNEL} is ${SnapRevision}."
     - name: Cache ${{ inputs.snap-name }}
       id: cache-snap
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: |
           ${{ inputs.snaps-dir }}/${{ inputs.snap-name }}_${{ inputs.snap-revision && inputs.snap-revision || steps.query-store.outputs.snap-revision }}.snap
