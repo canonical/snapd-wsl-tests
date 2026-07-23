@@ -14,6 +14,68 @@ import (
 	"time"
 )
 
+func TestCheckURLReachable(t *testing.T) {
+	t.Run("head success", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodHead {
+				t.Fatalf("unexpected method %q", r.Method)
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer srv.Close()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := CheckURLReachable(ctx, srv.URL); err != nil {
+			t.Fatalf("CheckURLReachable() error = %v", err)
+		}
+	})
+
+	t.Run("head method not allowed falls back to ranged get", func(t *testing.T) {
+		sawGet := false
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodHead:
+				w.WriteHeader(http.StatusMethodNotAllowed)
+			case http.MethodGet:
+				sawGet = true
+				if got := r.Header.Get("Range"); got != "bytes=0-0" {
+					t.Fatalf("Range header = %q, want %q", got, "bytes=0-0")
+				}
+				w.WriteHeader(http.StatusPartialContent)
+				fmt.Fprint(w, "x")
+			default:
+				t.Fatalf("unexpected method %q", r.Method)
+			}
+		}))
+		defer srv.Close()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := CheckURLReachable(ctx, srv.URL); err != nil {
+			t.Fatalf("CheckURLReachable() error = %v", err)
+		}
+		if !sawGet {
+			t.Fatal("expected fallback GET request")
+		}
+	})
+
+	t.Run("404 returns error", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+			fmt.Fprint(w, "not found")
+		}))
+		defer srv.Close()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		err := CheckURLReachable(ctx, srv.URL)
+		if err == nil {
+			t.Fatal("CheckURLReachable() expected error, got nil")
+		}
+	})
+}
+
 func TestDownloadFile(t *testing.T) {
 	tests := []struct {
 		name     string

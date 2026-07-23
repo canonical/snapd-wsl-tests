@@ -16,6 +16,65 @@ import (
 	"github.com/canonical/snapd-wsl-tests/internal/wsl"
 )
 
+const maxErrorBodyBytes = 4096
+
+func readHTTPErrorBody(resp *http.Response) ([]byte, bool) {
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes+1))
+	truncated := len(body) > maxErrorBodyBytes
+	if truncated {
+		body = body[:maxErrorBodyBytes]
+	}
+	return body, truncated
+}
+
+func makeHTTPStatusError(prefix string, resp *http.Response) error {
+	body, truncated := readHTTPErrorBody(resp)
+	suffix := ""
+	if truncated {
+		suffix = " (truncated)"
+	}
+	return fmt.Errorf("%s (HTTP %d): %q%s", prefix, resp.StatusCode, body, suffix)
+}
+
+// CheckURLReachable validates that downloadURL is reachable before starting a full download.
+// It first attempts a HEAD request; if the server does not allow HEAD, it falls back to
+// a ranged GET request to avoid downloading the whole file.
+func CheckURLReachable(ctx context.Context, downloadURL string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, downloadURL, nil)
+	if err != nil {
+		return fmt.Errorf("cannot verify download URL (request): %w", err)
+	}
+	resp, err := wsl.HTTPClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("cannot verify download URL (fetch): %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= http.StatusOK && resp.StatusCode < 300 {
+		return nil
+	}
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		return makeHTTPStatusError("cannot verify download URL", resp)
+	}
+
+	getReq, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
+	if err != nil {
+		return fmt.Errorf("cannot verify download URL (fallback request): %w", err)
+	}
+	getReq.Header.Set("Range", "bytes=0-0")
+
+	getResp, err := wsl.HTTPClient.Do(getReq)
+	if err != nil {
+		return fmt.Errorf("cannot verify download URL (fallback fetch): %w", err)
+	}
+	defer getResp.Body.Close()
+
+	if getResp.StatusCode == http.StatusOK || getResp.StatusCode == http.StatusPartialContent || getResp.StatusCode == http.StatusRequestedRangeNotSatisfiable {
+		return nil
+	}
+	return makeHTTPStatusError("cannot verify download URL", getResp)
+}
+
 // DownloadFile downloads a file from downloadURL and saves it to destPath.
 // It uses atomic operations: downloads to a temporary file (.tmp extension),
 // then renames to the final path only on success. This prevents partial
@@ -40,19 +99,7 @@ func DownloadFile(ctx context.Context, downloadURL, destPath string) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		// Capture a bounded amount of the response body to include in the error
-		// (may explain 403/404) without allowing excessive memory usage.
-		const maxErrorBodyBytes = 4096
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes+1))
-		truncated := len(body) > maxErrorBodyBytes
-		if truncated {
-			body = body[:maxErrorBodyBytes]
-		}
-		suffix := ""
-		if truncated {
-			suffix = " (truncated)"
-		}
-		return fmt.Errorf("cannot download file (HTTP %d): %q%s", resp.StatusCode, body, suffix)
+		return makeHTTPStatusError("cannot download file", resp)
 	}
 	tmpFile := destPath + ".tmp"
 	f, err := os.Create(tmpFile)

@@ -28,6 +28,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/canonical/snapd-wsl-tests/internal/dl"
 )
@@ -107,6 +108,17 @@ func run(ctx context.Context) error {
 	if _, err := os.Stat(rootfsPath); err == nil {
 		slog.Info("Using cached rootfs", "path", rootfsPath)
 	} else if os.IsNotExist(err) {
+		preflightCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		defer cancel()
+
+		if err := dl.CheckURLReachable(preflightCtx, rootfsURL); err != nil {
+			suggestion := suggestUbuntuWSLURL(rootfsURL, rootfsFile)
+			if suggestion != "" {
+				return fmt.Errorf("cannot verify rootfs URL %q before download: %w; try %q", rootfsURL, err, suggestion)
+			}
+			return fmt.Errorf("cannot verify rootfs URL %q before download: %w", rootfsURL, err)
+		}
+
 		slog.Info("Downloading rootfs")
 		if err := dl.DownloadFile(ctx, rootfsURL, rootfsPath); err != nil {
 			return fmt.Errorf("cannot download rootfs: %w", err)
@@ -206,6 +218,20 @@ func validateBaseFilename(filename string) error {
 	return nil
 }
 
+func suggestUbuntuWSLURL(rootfsURL, rootfsFile string) string {
+	const brokenPrefix = "/ubuntu-wsl/daily-live/current/"
+	if !strings.Contains(rootfsURL, brokenPrefix) {
+		return ""
+	}
+
+	codename, _, found := strings.Cut(rootfsFile, "-wsl-")
+	if !found || codename == "" {
+		return ""
+	}
+
+	fixedPrefix := "/ubuntu-wsl/" + codename + "/daily-live/current/"
+	return strings.Replace(rootfsURL, brokenPrefix, fixedPrefix, 1)
+}
 
 func main() {
 	// Configure logging

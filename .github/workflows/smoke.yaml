@@ -46,7 +46,7 @@ jobs:
             wsl-rootfs-file: noble-wsl-amd64.wsl
           - codename: resolute
             version-id: "26.04"
-            wsl-rootfs-url: https://cdimage.ubuntu.com/ubuntu-wsl/daily-live/current/resolute-wsl-amd64.wsl
+            wsl-rootfs-url: https://cdimage.ubuntu.com/ubuntu-wsl/resolute/daily-live/current/resolute-wsl-amd64.wsl
             wsl-rootfs-file: resolute-wsl-amd64.wsl
     uses: ./.github/workflows/generic.yaml
     with:
